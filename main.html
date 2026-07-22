@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verificação de Segurança - Discord</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Supabase JS SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- hCaptcha SDK -->
+    <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex items-center justify-center p-4">
+
+    <div class="max-w-md w-full bg-slate-800 rounded-2xl shadow-2xl p-8 border border-slate-700 text-center">
+        
+        <!-- Ícone -->
+        <div class="w-16 h-16 bg-blue-600/20 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-blue-500/30">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+            </svg>
+        </div>
+
+        <h1 class="text-2xl font-bold text-white mb-2">Verificação de Conta</h1>
+        <p class="text-slate-400 text-sm mb-6">Autentique a sua conta do Discord e resolva o desafio anti-robô para receber o seu cargo no servidor.</p>
+
+        <!-- Informações do Utilizador Autenticado -->
+        <div id="user-info" class="hidden mb-6 bg-slate-700/50 p-4 rounded-xl border border-slate-600 flex items-center gap-3">
+            <img id="user-avatar" class="w-12 h-12 rounded-full border-2 border-blue-500" src="" alt="Avatar">
+            <div class="text-left overflow-hidden">
+                <p id="user-name" class="font-bold text-white truncate"></p>
+                <p class="text-xs text-slate-400">Pronto para verificação</p>
+            </div>
+        </div>
+
+        <!-- Botão 1: Iniciar sessão via Discord (Supabase OAuth) -->
+        <button id="btn-login" onclick="loginComDiscord()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30">
+            <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.061 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.028z"/>
+            </svg>
+            Entrar com o Discord
+        </button>
+
+        <!-- Botão 2: Ativar hCaptcha Invisível (Aparece após sessão iniciada) -->
+        <!-- NOTA: Coloque a sua Site Key PÚBLICA do hCaptcha no atributo data-sitekey -->
+        <button id="btn-verify" 
+                class="hidden h-captcha w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl transition shadow-lg shadow-blue-600/30"
+                data-sitekey="A_SUA_HCAPTCHA_SITE_KEY_PUBLICA"
+                data-callback="aoResolverCaptcha"
+                data-size="invisible">
+            Concluir Verificação
+        </button>
+
+        <!-- Div de feedback para o utilizador -->
+        <div id="status-msg" class="hidden mt-4 p-3 rounded-lg text-sm font-semibold"></div>
+
+    </div>
+
+    <script>
+        // CONFIGURAÇÕES DO CLIENTE (Utilize apenas a 'anon' key pública do Supabase aqui)
+        const SUPABASE_URL = "https://wnoyrcjglejtyemyctfe.supabase.co";
+        const SUPABASE_ANON_KEY = "A_SUA_SUPABASE_ANON_KEY_PUBLICA"; 
+        const BOT_API_URL = "http://localhost:5000/api/verificar";
+
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        let currentUser = null;
+
+        async function loginComDiscord() {
+            const { error } = await supabaseClient.auth.signInWithOAuth({
+                provider: 'discord',
+                options: { redirectTo: window.location.href }
+            });
+            if (error) mostrarMensagem("Erro na autenticação: " + error.message, "erro");
+        }
+
+        async function verificarSessao() {
+            const { data: { user } } = await supabaseClient.auth.getUser();
+
+            if (user) {
+                currentUser = user;
+                document.getElementById('btn-login').classList.add('hidden');
+                document.getElementById('btn-verify').classList.remove('hidden');
+                
+                const userInfoDiv = document.getElementById('user-info');
+                userInfoDiv.classList.remove('hidden');
+                
+                const meta = user.user_metadata;
+                document.getElementById('user-name').innerText = meta.full_name || meta.name || "Utilizador do Discord";
+                document.getElementById('user-avatar').src = meta.avatar_url || "https://cdn.discordapp.com/embed/avatars/0.png";
+            }
+        }
+
+        async function aoResolverCaptcha(captchaToken) {
+            if (!currentUser) {
+                mostrarMensagem("Por favor, inicie sessão primeiro.", "erro");
+                return;
+            }
+
+            mostrarMensagem("A validar a verificação...", "info");
+
+            const discordUserId = currentUser.user_metadata.provider_id;
+
+            try {
+                const resposta = await fetch(BOT_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userId: discordUserId,
+                        captchaToken: captchaToken
+                    })
+                });
+
+                const resultado = await resposta.json();
+
+                if (resposta.ok && resultado.sucesso) {
+                    mostrarMensagem("✅ " + resultado.mensagem, "sucesso");
+                    document.getElementById('btn-verify').classList.add('hidden');
+                } else {
+                    mostrarMensagem("❌ " + (resultado.mensagem || "Falha ao verificar."), "erro");
+                }
+            } catch (err) {
+                mostrarMensagem("❌ Não foi possível comunicar com o servidor do Bot.", "erro");
+            }
+        }
+
+        function mostrarMensagem(texto, tipo) {
+            const msgEl = document.getElementById('status-msg');
+            msgEl.classList.remove('hidden', 'bg-green-500/20', 'text-green-400', 'bg-red-500/20', 'text-red-400', 'bg-blue-500/20', 'text-blue-400');
+            
+            if (tipo === "sucesso") {
+                msgEl.classList.add('bg-green-500/20', 'text-green-400');
+            } else if (tipo === "erro") {
+                msgEl.classList.add('bg-red-500/20', 'text-red-400');
+            } else {
+                msgEl.classList.add('bg-blue-500/20', 'text-blue-400');
+            }
+
+            msgEl.innerText = texto;
+        }
+
+        window.onload = verificarSessao;
+    </script>
+</body>
+</html>
+
